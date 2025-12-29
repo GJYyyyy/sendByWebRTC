@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>局域网文件传输</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .status {
+            padding: 15px;
+            text-align: center;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .status.connected { background: #d4edda; color: #155724; }
+        .status.disconnected { background: #f8d7da; color: #721c24; }
+        
+        .content {
+            padding: 20px;
+            display: grid;
+            gap: 20px;
+        }
+        
+        @media (min-width: 768px) {
+            .content {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        
+        .panel {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            border: 1px solid #e9ecef;
+        }
+        
+        h2 {
+            margin-bottom: 15px;
+            color: #495057;
+            font-size: 1.2em;
+        }
+        
+        .user-list {
+            list-style: none;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .user-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .btn {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        
+        .file-input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 2px dashed #dee2e6;
+            border-radius: 5px;
+            background: white;
+        }
+        
+        .progress {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            margin: 10px 0;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+            transition: width 0.3s;
+            border-radius: 10px;
+        }
+        
+        .file-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .file-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .file-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .connection-info {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📁 局域网文件传输</h1>
+            <p>基于WebRTC的点对点传输系统</p>
+        </div>
+        
+        <div id="status" class="status disconnected">
+            ⚡ 连接中...
+        </div>
+        
+        <div class="content">
+            <div class="panel">
+                <h2>👥 在线用户</h2>
+                <div id="connectionInfo" class="connection-info hidden">
+                    已连接到: <span id="connectedUser"></span>
+                </div>
+                <ul id="userList" class="user-list">
+                    <li>等待用户连接...</li>
+                </ul>
+                <button id="connectBtn" class="btn btn-primary" disabled>
+                    选择用户连接
+                </button>
+            </div>
+            
+            <div class="panel">
+                <h2>📤 发送文件</h2>
+                <div id="sendSection" class="hidden">
+                    <input type="file" id="fileInput" multiple class="file-input">
+                    <button id="sendBtn" class="btn btn-success" disabled>
+                        发送文件
+                    </button>
+                    <div id="sendProgress" class="hidden">
+                        <div class="progress">
+                            <div id="sendProgressBar" class="progress-bar" style="width: 0%"></div>
+                        </div>
+                        <div id="sendStatus">准备发送...</div>
+                    </div>
+                </div>
+                <div id="waitingConnection">
+                    请先与其他用户建立连接
+                </div>
+            </div>
+            
+            <div class="panel" style="grid-column: 1 / -1;">
+                <h2>📥 接收文件</h2>
+                <div id="receiveSection">
+                    <div id="receiveList" class="file-list">
+                        <div>等待接收文件...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class FileTransferApp {
+            constructor() {
+                this.clientId = this.generateId();
+                this.ws = null;
+                this.peerConnection = null;
+                this.dataChannel = null;
+                this.connectedUser = null;
+                this.users = [];
+                this.pendingFiles = new Map();
+                this.receivedFiles = new Map();
+                
+                this.initializeElements();
+                this.connectWebSocket();
+                this.setupEventListeners();
+            }
+            
+            generateId() {
+                return Math.random().toString(36).substring(2) + Date.now().toString(36);
+            }
+            
+            initializeElements() {
+                this.statusElement = document.getElementById('status');
+                this.userListElement = document.getElementById('userList');
+                this.connectBtn = document.getElementById('connectBtn');
+                this.sendSection = document.getElementById('sendSection');
+                this.waitingConnection = document.getElementById('waitingConnection');
+                this.fileInput = document.getElementById('fileInput');
+                this.sendBtn = document.getElementById('sendBtn');
+                this.sendProgress = document.getElementById('sendProgress');
+                this.sendProgressBar = document.getElementById('sendProgressBar');
+                this.sendStatus = document.getElementById('sendStatus');
+                this.receiveList = document.getElementById('receiveList');
+                this.connectionInfo = document.getElementById('connectionInfo');
+                this.connectedUserSpan = document.getElementById('connectedUser');
+            }
+            
+            connectWebSocket() {
+                const wsUrl = `ws://${window.location.hostname}:60999`;
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    this.updateStatus('connected', '✅ 已连接到服务器');
+                    this.ws.send(JSON.stringify({
+                        type: 'join',
+                        clientId: this.clientId
+                    }));
+                };
+                
+                this.ws.onmessage = (event) => {
+                    const message = JSON.parse(event.data);
+                    this.handleMessage(message);
+                };
+                
+                this.ws.onclose = () => {
+                    this.updateStatus('disconnected', '❌ 连接断开，正在重连...');
+                    setTimeout(() => this.connectWebSocket(), 3000);
+                };
+                
+                this.ws.onerror = (error) => {
+                    console.error('WebSocket错误:', error);
+                };
+            }
+            
+            handleMessage(message) {
+                switch (message.type) {
+                    case 'user-list':
+                        this.updateUserList(message.users);
+                        break;
+                    case 'offer':
+                        this.handleOffer(message);
+                        break;
+                    case 'answer':
+                        this.handleAnswer(message);
+                        break;
+                    case 'ice-candidate':
+                        this.handleIceCandidate(message);
+                        break;
+                    case 'file-info':
+                        this.handleFileInfo(message);
+                        break;
+                    case 'file-chunk':
+                        this.handleFileChunk(message);
+                        break;
+                }
+            }
+            
+            updateUserList(users) {
+                this.users = users;
+                this.userListElement.innerHTML = '';
+                
+                if (users.length === 0) {
+                    this.userListElement.innerHTML = '<li>暂无其他在线用户</li>';
+                    this.connectBtn.disabled = true;
+                    this.connectBtn.textContent = '选择用户连接';
+                    return;
+                }
+                
+                users.forEach(user => {
+                    const li = document.createElement('li');
+                    li.className = 'user-item';
+                    li.innerHTML = `
+                        <span>用户 ${user.id.substring(0, 8)}</span>
+                        <span style="color: ${user.connected ? '#28a745' : '#dc3545'}">
+                            ${user.connected ? '● 在线' : '● 离线'}
+                        </span>
+                    `;
+                    
+                    if (user.connected) {
+                        li.onclick = () => this.connectToUser(user.id);
+                    }
+                    
+                    this.userListElement.appendChild(li);
+                });
+                
+                this.connectBtn.disabled = false;
+                this.connectBtn.textContent = '选择用户连接';
+            }
+            
+            async connectToUser(targetId) {
+                if (this.connectedUser) {
+                    if (confirm('已连接到其他用户，是否断开当前连接？')) {
+                        this.disconnect();
+                    } else {
+                        return;
+                    }
+                }
+                
+                this.connectedUser = targetId;
+                this.setupPeerConnection();
+                
+                try {
+                    const offer = await this.peerConnection.createOffer();
+                    await this.peerConnection.setLocalDescription(offer);
+                    
+                    this.ws.send(JSON.stringify({
+                        type: 'offer',
+                        from: this.clientId,
+                        target: targetId,
+                        offer: offer
+                    }));
+                    
+                    this.updateConnectionInfo(targetId);
+                } catch (error) {
+                    console.error('创建offer失败:', error);
+                }
+            }
+            
+            setupPeerConnection() {
+                // 局域网内不需要STUN服务器
+                this.peerConnection = new RTCPeerConnection({
+                    iceServers: [] // 空配置，仅使用本地候选
+                });
+                
+                this.peerConnection.onicecandidate = (event) => {
+                    if (event.candidate && this.connectedUser) {
+                        this.ws.send(JSON.stringify({
+                            type: 'ice-candidate',
+                            from: this.clientId,
+                            target: this.connectedUser,
+                            candidate: event.candidate
+                        }));
+                    }
+                };
+                
+                this.peerConnection.ondatachannel = (event) => {
+                    this.setupDataChannel(event.channel);
+                };
+                
+                // 创建数据通道
+                this.dataChannel = this.peerConnection.createDataChannel('fileTransfer', {
+                    ordered: true
+                });
+                this.setupDataChannel(this.dataChannel);
+                
+                this.peerConnection.onconnectionstatechange = () => {
+                    console.log('连接状态:', this.peerConnection.connectionState);
+                    if (this.peerConnection.connectionState === 'connected') {
+                        this.updateStatus('connected', '✅ P2P连接已建立');
+                        this.sendSection.classList.remove('hidden');
+                        this.waitingConnection.classList.add('hidden');
+                    } else if (this.peerConnection.connectionState === 'disconnected') {
+                        this.disconnect();
+                    }
+                };
+            }
+            
+            setupDataChannel(channel) {
+                this.dataChannel = channel;
+                
+                channel.onopen = () => {
+                    console.log('数据通道已打开');
+                };
+                
+                channel.onmessage = (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        this.handleDataChannelMessage(message);
+                    } catch (error) {
+                        console.error('数据通道消息解析错误:', error);
+                    }
+                };
+                
+                channel.onclose = () => {
+                    console.log('数据通道关闭');
+                };
+            }
+            
+            handleDataChannelMessage(message) {
+                switch (message.type) {
+                    case 'file-info':
+                        this.handleReceivedFileInfo(message);
+                        break;
+                    case 'file-chunk':
+                        this.handleReceivedFileChunk(message);
+                        break;
+                }
+            }
+            
+            async handleOffer(message) {
+                if (this.connectedUser) {
+                    // 已连接其他用户，拒绝新连接
+                    return;
+                }
+                
+                this.connectedUser = message.from;
+                this.setupPeerConnection();
+                
+                try {
+                    await this.peerConnection.setRemoteDescription(message.offer);
+                    const answer = await this.peerConnection.createAnswer();
+                    await this.peerConnection.setLocalDescription(answer);
+                    
+                    this.ws.send(JSON.stringify({
+                        type: 'answer',
+                        from: this.clientId,
+                        target: message.from,
+                        answer: answer
+                    }));
+                    
+                    this.updateConnectionInfo(message.from);
+                } catch (error) {
+                    console.error('处理offer失败:', error);
+                }
+            }
+            
+            async handleAnswer(message) {
+                if (!this.peerConnection) return;
+                
+                try {
+                    await this.peerConnection.setRemoteDescription(message.answer);
+                } catch (error) {
+                    console.error('处理answer失败:', error);
+                }
+            }
+            
+            async handleIceCandidate(message) {
+                if (!this.peerConnection) return;
+                
+                try {
+                    await this.peerConnection.addIceCandidate(message.candidate);
+                } catch (error) {
+                    console.error('处理ICE候选失败:', error);
+                }
+            }
+            
+            setupEventListeners() {
+                this.connectBtn.addEventListener('click', () => {
+                    // 点击按钮时显示用户列表，由用户点击具体用户连接
+                });
+                
+                this.fileInput.addEventListener('change', () => {
+                    this.sendBtn.disabled = !this.fileInput.files.length;
+                });
+                
+                this.sendBtn.addEventListener('click', () => {
+                    this.sendFiles();
+                });
+                
+                // 页面关闭时清理连接
+                window.addEventListener('beforeunload', () => {
+                    this.disconnect();
+                });
+            }
+            
+            async sendFiles() {
+                const files = this.fileInput.files;
+                if (!files.length || !this.dataChannel || this.dataChannel.readyState !== 'open') {
+                    alert('请先选择文件并确保连接正常');
+                    return;
+                }
+                
+                this.sendProgress.classList.remove('hidden');
+                
+                for (let file of files) {
+                    await this.sendFile(file);
+                }
+                
+                this.sendProgress.classList.add('hidden');
+                this.fileInput.value = '';
+                this.sendBtn.disabled = true;
+            }
+            
+            async sendFile(file) {
+                return new Promise((resolve) => {
+                    const fileId = this.generateId();
+                    const chunkSize = 16 * 1024; // 16KB chunks
+                    let offset = 0;
+                    
+                    // 发送文件信息
+                    this.dataChannel.send(JSON.stringify({
+                        type: 'file-info',
+                        fileId: fileId,
+                        fileName: file.name,
+                        fileSize: file.size,
+                        fileType: file.type
+                    }));
+                    
+                    const reader = new FileReader();
+                    
+                    reader.onload = (e) => {
+                        const chunk = e.target.result;
+                        const isLast = offset + chunkSize >= file.size;
+                        
+                        this.dataChannel.send(JSON.stringify({
+                            type: 'file-chunk',
+                            fileId: fileId,
+                            chunk: Array.from(new Uint8Array(chunk)),
+                            isLast: isLast
+                        }));
+                        
+                        // 更新进度
+                        const progress = Math.min(100, Math.round((offset + chunkSize) / file.size * 100));
+                        this.sendProgressBar.style.width = progress + '%';
+                        this.sendStatus.textContent = `发送中: ${file.name} (${progress}%)`;
+                        
+                        offset += chunkSize;
+                        
+                        if (!isLast) {
+                            // 读取下一块
+                            const slice = file.slice(offset, offset + chunkSize);
+                            reader.readAsArrayBuffer(slice);
+                        } else {
+                            resolve();
+                        }
+                    };
+                    
+                    // 开始读取第一块
+                    const slice = file.slice(offset, offset + chunkSize);
+                    reader.readAsArrayBuffer(slice);
+                });
+            }
+            
+            handleReceivedFileInfo(message) {
+                const fileId = message.fileId;
+                this.receivedFiles.set(fileId, {
+                    fileName: message.fileName,
+                    fileSize: message.fileSize,
+                    fileType: message.fileType,
+                    chunks: [],
+                    receivedSize: 0
+                });
+                
+                this.addFileToReceiveList(fileId, message.fileName, message.fileSize, 0);
+            }
+            
+            handleReceivedFileChunk(message) {
+                const fileInfo = this.receivedFiles.get(message.fileId);
+                if (!fileInfo) return;
+                
+                fileInfo.chunks.push(new Uint8Array(message.chunk));
+                fileInfo.receivedSize += message.chunk.length;
+                
+                const progress = Math.min(100, Math.round(fileInfo.receivedSize / fileInfo.fileSize * 100));
+                this.updateFileProgress(message.fileId, progress);
+                
+                if (message.isLast) {
+                    this.completeFileDownload(message.fileId);
+                }
+            }
+            
+            addFileToReceiveList(fileId, fileName, fileSize, progress) {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.id = `file-${fileId}`;
+                fileItem.innerHTML = `
+                    <div><strong>${fileName}</strong></div>
+                    <div class="file-info">
+                        <span>${this.formatFileSize(fileSize)}</span>
+                        <span>${progress}%</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar" style="width: ${progress}%"></div>
+                    </div>
+                `;
+                
+                this.receiveList.appendChild(fileItem);
+            }
+            
+            updateFileProgress(fileId, progress) {
+                const fileElement = document.getElementById(`file-${fileId}`);
+                if (fileElement) {
+                    const progressBar = fileElement.querySelector('.progress-bar');
+                    const progressText = fileElement.querySelector('.file-info span:last-child');
+                    progressBar.style.width = progress + '%';
+                    progressText.textContent = progress + '%';
+                }
+            }
+            
+            completeFileDownload(fileId) {
+                const fileInfo = this.receivedFiles.get(fileId);
+                if (!fileInfo) return;
+                
+                // 合并所有chunks
+                const totalLength = fileInfo.chunks.reduce((total, chunk) => total + chunk.length, 0);
+                const result = new Uint8Array(totalLength);
+                let offset = 0;
+                
+                for (const chunk of fileInfo.chunks) {
+                    result.set(chunk, offset);
+                    offset += chunk.length;
+                }
+                
+                // 创建下载链接
+                const blob = new Blob([result], { type: fileInfo.fileType });
+                const url = URL.createObjectURL(blob);
+                
+                const fileElement = document.getElementById(`file-${fileId}`);
+                if (fileElement) {
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'btn btn-primary';
+                    downloadBtn.textContent = '下载';
+                    downloadBtn.onclick = () => {
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = fileInfo.fileName;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    };
+                    
+                    fileElement.appendChild(downloadBtn);
+                }
+                
+                this.updateFileProgress(fileId, 100);
+            }
+            
+            formatFileSize(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+            
+            updateConnectionInfo(userId) {
+                this.connectionInfo.classList.remove('hidden');
+                this.connectedUserSpan.textContent = userId.substring(0, 8);
+                this.connectBtn.textContent = '断开连接';
+                this.connectBtn.onclick = () => this.disconnect();
+            }
+            
+            disconnect() {
+                if (this.peerConnection) {
+                    this.peerConnection.close();
+                    this.peerConnection = null;
+                }
+                
+                this.dataChannel = null;
+                this.connectedUser = null;
+                
+                this.connectionInfo.classList.add('hidden');
+                this.sendSection.classList.add('hidden');
+                this.waitingConnection.classList.remove('hidden');
+                
+                this.connectBtn.textContent = '选择用户连接';
+                this.connectBtn.onclick = null;
+                this.connectBtn.addEventListener('click', () => {
+                    // 重新绑定点击事件
+                });
+                
+                this.updateStatus('connected', '✅ 已连接到服务器');
+            }
+            
+            updateStatus(type, message) {
+                this.statusElement.textContent = message;
+                this.statusElement.className = `status ${type}`;
+            }
+        }
+        
+        // 初始化应用
+        document.addEventListener('DOMContentLoaded', () => {
+            new FileTransferApp();
+        });
+    </script>
+</body>
+</html>
