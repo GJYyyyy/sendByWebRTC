@@ -10,6 +10,38 @@ const WS_PORT = 60999;
 // 存储所有连接的客户端
 const clients = new Map();
 
+// 对不同文件类型返回不同的响应头
+const fileTypeResponseHeaders = new Map([
+    [
+        'html',
+        {
+            'Content-Type': 'text/html',
+            'Cache-Control': 'max-age=86400',
+        }
+    ],
+    [
+        'ico',
+        {
+            'Content-Type': 'image/x-icon',
+            'Cache-Control': 'max-age=86400'
+        }
+    ],
+    [
+        'css',
+        {
+            'Content-Type': 'text/css',
+            'Cache-Control': 'max-age=86400'
+        }
+    ],
+    [
+        'js',
+        {
+            'Content-Type': 'application/x-javascript',
+            'Cache-Control': 'max-age=86400'
+        }
+    ],
+])
+
 // 创建HTTP服务器
 const httpServer = http.createServer((req, res) => {
     let { url } = req;
@@ -17,67 +49,18 @@ const httpServer = http.createServer((req, res) => {
     let filePath = path.join(__dirname, `../public${url}`);
 
     if (fs.existsSync(filePath)) {
-        if (filePath.endsWith('.ico')) {
-            // favicon.ico
-            fs.readFile(filePath, (err, data) => {
-                if (err) {
-                    res.writeHead(404);
-                    res.end('File not found');
-                    return;
-                }
+        let extName = path.extname(filePath).replace(/^\.{1}/, '');
 
-                res.writeHead(200, {
-                    'Content-Type': 'image/x-icon',
-                    'Cache-Control': 'max-age=86400'
-                });
-                res.end(data);
-            });
-        } else if (filePath.endsWith('.html')) {
-            // 服务index.html文件
-            fs.readFile(filePath, (err, data) => {
-                if (err) {
-                    res.writeHead(404);
-                    res.end('File not found');
-                    return;
-                }
+        fs.readFile(filePath, (err, data) => {
+            if (err) {
+                res.writeHead(404);
+                res.end('File not found');
+                return;
+            }
 
-                res.writeHead(200, {
-                    'Content-Type': 'text/html',
-                    'Cache-Control': 'max-age=86400'
-                });
-                res.end(data);
-            });
-        } else if (filePath.endsWith('.css')) {
-            // css
-            fs.readFile(filePath, (err, data) => {
-                if (err) {
-                    res.writeHead(404);
-                    res.end('File not found');
-                    return;
-                }
-
-                res.writeHead(200, {
-                    'Content-Type': 'text/css',
-                    'Cache-Control': 'max-age=86400'
-                });
-                res.end(data);
-            });
-        } else if (filePath.endsWith('.js')) {
-            // javascript
-            fs.readFile(filePath, (err, data) => {
-                if (err) {
-                    res.writeHead(404);
-                    res.end('File not found');
-                    return;
-                }
-
-                res.writeHead(200, {
-                    'Content-Type': 'application/x-javascript',
-                    'Cache-Control': 'max-age=86400'
-                });
-                res.end(data);
-            });
-        }
+            res.writeHead(200, fileTypeResponseHeaders.get(extName));
+            res.end(data);
+        });
     } else {
         res.writeHead(404);
         res.end('404 Not found');

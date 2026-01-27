@@ -4,9 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="icon" href="./favicon.ico" type="image/x-icon">
     <title>局域网文件传输</title>
-    <link rel="stylesheet" href="/main.css">
+    <link rel="stylesheet" href="./main.css">
 </head>
 
 <body>
@@ -65,7 +65,11 @@
         </div>
     </div>
 
-    <script src="/main.js"></script>
+    <!-- 引入 adapter.js后，它会在幕后自动工作，抹平浏览器差异。你无需改变常规的 WebRTC API 写法。 -->
+    <script src="./webrtc-adapter@9.0.3.js"></script>
+    <!-- 引入 simple-peer 简化WebRTC API -->
+    <script src="./simple-peer@9.11.1.js"></script>
+    <script src="./main.js"></script>
 </body>
 
 </html>
