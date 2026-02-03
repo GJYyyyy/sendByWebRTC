@@ -6,65 +6,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="./favicon.ico" type="image/x-icon">
     <title>局域网文件传输</title>
-    <link rel="stylesheet" href="./main.css">
+    <link rel="stylesheet/less" href="./main.less">
 </head>
 
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>📁 局域网文件传输</h1>
-            <p>基于WebRTC的点对点传输系统</p>
+    <div id="main">
+
+        <h1 class="title">局域网文件传输</h1>
+
+        <div id="infoArea">
+            <div class="my-info">我的ID：<input id="id" type="text" /><span id="status"></span></div>
+            <div class="titl">用户列表（点击用户建立连接）：</div>
+            <div id="userList"></div>
         </div>
 
-        <div id="status" class="status disconnected">
-            ⚡ 连接中...
-        </div>
-
-        <div class="content">
-            <div class="panel">
-                <h2>👥 在线用户</h2>
-                <div class="user-item">用户（自己） <input id="myId" class="my-id" /></div>
-                <div id="connectionInfo" class="connection-info hidden">
-                    已连接到: <span id="connectedUser"></span>
+        <div id="transferArea">
+            <div class="send">
+                <div class="title">发送文件</div>
+                <div class="file-selector">
+                    <input id="fileInput" class="file-input" type="file" multiple />
                 </div>
-                <ul id="userList" class="user-list">
-                    <li>等待用户连接...</li>
-                </ul>
-                <button id="connectBtn" class="btn btn-primary" disabled>
-                    选择用户连接
-                </button>
-            </div>
-
-            <div class="panel">
-                <h2>📤 发送文件</h2>
-                <div id="sendSection" class="hidden">
-                    <input type="file" id="fileInput" class="file-input">
-                    <button id="sendBtn" class="btn btn-success" disabled>
-                        发送文件
-                    </button>
-                    <div id="sendProgress" class="hidden">
-                        <div class="progress">
-                            <div id="sendProgressBar" class="progress-bar" style="width: 0%"></div>
-                        </div>
-                        <div id="sendStatus">准备发送...</div>
-                    </div>
-                </div>
-                <div id="waitingConnection">
-                    请先与其他用户建立连接
+                <div id="sendList"></div>
+                <div class="actions">
+                    <button id="sendBtn">发送</button>
                 </div>
             </div>
-
-            <div class="panel" style="grid-column: 1 / -1;">
-                <h2>📥 接收文件</h2>
-                <div id="receiveSection">
-                    <div id="receiveList" class="file-list">
-                        <div>等待接收文件...</div>
-                    </div>
-                </div>
+            <div class="receive">
+                <div class="title">接收文件</div>
+                <div id="receiveList"></div>
             </div>
         </div>
+
     </div>
 
+    <!-- 引入 less -->
+    <script src="./less.min@4.1.3.js" data-dumpLine-numbers="" data-async="true" data-env="production"></script>
     <!-- 引入 adapter.js后，它会在幕后自动工作，抹平浏览器差异。你无需改变常规的 WebRTC API 写法。 -->
     <script src="./webrtc-adapter@9.0.3.js"></script>
     <!-- 引入 simple-peer 简化WebRTC API -->

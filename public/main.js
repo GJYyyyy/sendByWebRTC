@@ -1,18 +1,39 @@
 
 class FileTransferApp {
-    constructor() {
-        this.clientId = this.generateId();
-        this.ws = null;
-        this.peerConnection = null;
-        this.dataChannel = null;
-        this.connectedUser = null;
-        this.users = [];
-        this.pendingFiles = new Map();
-        this.receivedFiles = new Map();
+    wsPort = 60999;
+    ws = null;
+    peer = null;
+    CHUNK_SIZE = 16 * 1024;
+    _id = undefined;
+    _targetId = undefined;
+    _userList = [];
+    _status = 'offline';
+    _seFiles = new Map(); // 需要发送的文件
+    _reFiles = new Map(); // 接收的文件
 
-        this.initializeElements();
-        this.connectWebSocket();
-        this.setupEventListeners();
+    $id = null;
+    $status = null;
+    $userList = null;
+    $transferArea = null;
+    $fileInput = null;
+    $sendList = null;
+    $receiveList = null;
+
+    /**
+     * 状态中文映射
+     */
+    statusChineseMap = new Map([
+        ['online', '在线'],
+        ['offline', '离线'],
+        ['reconnecting', '重连中'],
+        ['connected', '已连接'],
+    ]);
+
+    constructor() {
+        this.initElement();
+        this.generateId();
+        this.register();
+        this.initPeer();
     }
 
     /**
@@ -20,530 +41,508 @@ class FileTransferApp {
      * @returns {string}
      */
     generateId() {
-        return Math.random().toString(36).substring(2) + Date.now().toString(36);
+        const min = 10000;
+        const max = 99999;
+        const decimal = 0;
+        this.clientId = (Math.random() * (max - min) + min).toFixed(decimal);
     }
 
-    initializeElements() {
-        this.myId = document.getElementById('myId');
-        this.statusElement = document.getElementById('status');
-        this.userListElement = document.getElementById('userList');
-        this.connectBtn = document.getElementById('connectBtn');
-        this.sendSection = document.getElementById('sendSection');
-        this.waitingConnection = document.getElementById('waitingConnection');
-        this.fileInput = document.getElementById('fileInput');
-        this.sendBtn = document.getElementById('sendBtn');
-        this.sendProgress = document.getElementById('sendProgress');
-        this.sendProgressBar = document.getElementById('sendProgressBar');
-        this.sendStatus = document.getElementById('sendStatus');
-        this.receiveList = document.getElementById('receiveList');
-        this.connectionInfo = document.getElementById('connectionInfo');
-        this.connectedUserSpan = document.getElementById('connectedUser');
+    initElement() {
+        this.$id = this.$('id');
+        this.$status = this.$('status');
+        this.$userList = this.$('userList');
+        this.$transferArea = this.$('transferArea');
+        this.$fileInput = this.$('fileInput');
+        this.$sendList = this.$('sendList');
+        this.$receiveList = this.$('receiveList');
+        this.$sendBtn = this.$('sendBtn');
+
+        this.$id.addEventListener('blur', (ev) => {
+            this.ws.send(JSON.stringify({
+                type: 'rename',
+                from: this.clientId,
+                newFrom: ev.target.value,
+            }))
+        })
+
+        this.$fileInput.addEventListener('change', (ev) => {
+            let map = new Map();
+            for (let file of ev.target.files) {
+                map.set(this.calcFileId(file), file)
+            }
+            this.seFiles = map;
+        })
+
+        this.$sendBtn.addEventListener('click', (ev) => {
+            this.sendFiles();
+        })
     }
 
-    connectWebSocket() {
-        const wsUrl = `ws://${window.location.hostname}:60999`;
+    /**
+     * 在ws服务器上注册自己
+     */
+    register() {
+        const wsUrl = `ws://${window.location.hostname}:${this.wsPort}`;
         this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
-            this.updateStatus('connected', '✅ 已连接到服务器');
+            this.status = 'online';
             this.ws.send(JSON.stringify({
-                type: 'join',
+                type: 'register',
+                status: this.status,
                 from: this.clientId,
             }));
-            this.myId.value = this.clientId;
         };
 
         this.ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
-            this.handleMessage(message);
+            this.handleWebSocketMessage(message);
         };
 
         this.ws.onclose = () => {
-            this.updateStatus('disconnected', '❌ 连接断开，正在重连...');
-            setTimeout(() => this.connectWebSocket(), 3000);
+            this.status = 'reconnecting';
+            this.ws.send(JSON.stringify({
+                type: 'update-status',
+                from: this.clientId,
+                status: this.status,
+            }))
+            setTimeout(() => this.register(), 3000);
         };
 
         this.ws.onerror = (error) => {
             console.error('WebSocket错误:', error);
+            this.status = 'offline';
+            this.ws.send(JSON.stringify({
+                type: 'update-status',
+                from: this.clientId,
+                status: this.status,
+            }))
         };
     }
 
-    handleMessage(message) {
+    /**
+     * 处理WebSocket消息
+     * @param {Object} message 
+     */
+    handleWebSocketMessage(message) {
+        console.log('收到websocket消息:', message);
+
         switch (message.type) {
-            case 'rename-success':
-                this.clientId = message.newClientId;
+            case 'update-user-list':
+                this.userList = message.users;
                 break;
             case 'rename-error':
                 alert(message.message);
-                this.myId.value = message.clientId;
                 break;
-            case 'user-list':
-                this.updateUserList(message.users);
+            case 'rename-success':
+                this.clientId = message.newFrom;
                 break;
-            case 'offer':
-                this.handleOffer(message);
-                break;
-            case 'answer':
-                this.handleAnswer(message);
-                break;
-            case 'ice-candidate':
-                this.handleIceCandidate(message);
-                break;
-            case 'file-info':
-                this.handleFileInfo(message);
-                break;
-            case 'file-chunk':
-                this.handleFileChunk(message);
+            case 'peer-handshake':
+                this.targetId = message.from;
+                this.peer.signal(message.data);
                 break;
         }
     }
 
-    updateUserList(users) {
-        this.users = users;
-        this.userListElement.innerHTML = '';
-
-        if (users.length === 0) {
-            this.userListElement.innerHTML = '<li>暂无其他在线用户</li>';
-            this.connectBtn.disabled = true;
-            this.connectBtn.textContent = '选择用户连接';
-            return;
-        }
-
-        users.forEach(user => {
-            const li = document.createElement('li');
-            li.className = 'user-item';
-            li.innerHTML = `
-                        <span>用户 ${user.id}</span>
-                        <span style="color: #28a745;">● 在线</span>
-                    `;
-
-            li.onclick = () => this.connectToUser(user.id);
-
-            this.userListElement.appendChild(li);
-        });
-
-        this.connectBtn.disabled = false;
-        this.connectBtn.textContent = '选择用户连接';
-    }
-
-    async connectToUser(targetId) {
-        if (this.connectedUser) {
-            if (confirm('已连接到其他用户，是否断开当前连接？')) {
-                this.disconnect();
-            } else {
-                return;
+    initPeer(initiator = false) {
+        this.peer = new SimplePeer({
+            initiator,
+            trickle: true,
+            config: {
+                iceServers: []
             }
-        }
+        })
 
-        this.connectedUser = targetId;
-        this.setupPeerConnection();
-
-        try {
-            const offer = await this.peerConnection.createOffer();
-            await this.peerConnection.setLocalDescription(offer);
-
+        this.peer.on('signal', (data) => {
             this.ws.send(JSON.stringify({
-                type: 'offer',
+                type: 'peer-handshake',
                 from: this.clientId,
-                target: targetId,
-                offer: offer
+                target: this.targetId,
+                data,
             }));
-
-            this.updateConnectionInfo(targetId);
-        } catch (error) {
-            console.error('创建offer失败:', error);
-        }
-    }
-
-    setupPeerConnection() {
-        // 局域网内不需要STUN服务器
-        this.peerConnection = new RTCPeerConnection({
-            iceServers: [] // 空配置，仅使用本地候选
         });
 
-        this.peerConnection.onicecandidate = (event) => {
-            if (event.candidate && this.connectedUser) {
-                this.ws.send(JSON.stringify({
-                    type: 'ice-candidate',
-                    from: this.clientId,
-                    target: this.connectedUser,
-                    candidate: event.candidate
-                }));
-            }
-        };
-
-        this.peerConnection.ondatachannel = (event) => {
-            this.setupDataChannel(event.channel);
-        };
-
-        // 创建数据通道
-        this.dataChannel = this.peerConnection.createDataChannel('fileTransfer', {
-            ordered: true,
-            maxRetransmits: 10, // 最大重传次数
+        this.peer.on('connect', () => {
+            this.status = 'connected';
+            this.ws.send(JSON.stringify({
+                type: 'update-status',
+                from: this.clientId,
+                status: this.status,
+            }))
         });
-        this.setupDataChannel(this.dataChannel);
 
-        this.peerConnection.onconnectionstatechange = () => {
-            console.log('连接状态:', this.peerConnection.connectionState);
-            if (this.peerConnection.connectionState === 'connected') {
-                this.updateStatus('connected', '✅ P2P连接已建立');
-                this.sendSection.classList.remove('hidden');
-                this.waitingConnection.classList.add('hidden');
-            } else if (this.peerConnection.connectionState === 'disconnected') {
-                this.disconnect();
-            }
-        };
+        this.peer.on('data', (data) => {
+            const message = JSON.parse(data);
+            this.handlePeerMessage(message);
+        })
+
+        this.peer.on('close', () => {
+            this.initPeer();
+        });
+
+        this.peer.on('error', (error) => {
+            console.error('Peer错误:', error);
+            this.status = 'online';
+            this.ws.send(JSON.stringify({
+                type: 'update-status',
+                from: this.clientId,
+                status: this.status,
+            }))
+
+        });
     }
 
-    setupDataChannel(channel) {
-        this.dataChannel = channel;
+    /**
+     * 处理Peer消息
+     * @param {Object} message 
+     */
+    handlePeerMessage(message) {
+        // console.log('收到peer消息:', message);
 
-        channel.onopen = () => {
-            console.log('数据通道已打开');
-        };
-
-        channel.onmessage = (event) => {
-            try {
-                const message = JSON.parse(event.data);
-                this.handleDataChannelMessage(message);
-            } catch (error) {
-                console.error('数据通道消息解析错误:', error);
-            }
-        };
-
-        channel.onclose = () => {
-            console.log('数据通道关闭');
-        };
-    }
-
-    handleDataChannelMessage(message) {
         switch (message.type) {
-            case 'file-info':
-                this.handleReceivedFileInfo(message);
+            case 'file-meta-start':
+                this.receiveSingleFileMetaStart(message);
+                break;
+            case 'file-meta':
+                this.receiveSingleFileMeta(message);
+                break;
+            case 'file-meta-end':
+                this.receiveSingleFileMetaEnd(message);
                 break;
             case 'file-chunk':
-                this.handleReceivedFileChunk(message);
+                this.receiveSingleFileChunk(message);
+                break;
+            case 'file-end':
+                this.receiveSingleFileChunkEnd(message);
+                break;
+            case 'peer-handshake':
+
                 break;
         }
+
     }
 
-    async handleOffer(message) {
-        if (this.connectedUser) {
-            // 已连接其他用户，拒绝新连接
-            return;
-        }
-
-        this.connectedUser = message.from;
-        this.setupPeerConnection();
-
-        try {
-            await this.peerConnection.setRemoteDescription(message.offer);
-            const answer = await this.peerConnection.createAnswer();
-            await this.peerConnection.setLocalDescription(answer);
-
-            this.ws.send(JSON.stringify({
-                type: 'answer',
-                from: this.clientId,
-                target: message.from,
-                answer: answer
-            }));
-
-            this.updateConnectionInfo(message.from);
-        } catch (error) {
-            console.error('处理offer失败:', error);
-        }
-    }
-
-    async handleAnswer(message) {
-        if (!this.peerConnection) return;
-
-        try {
-            await this.peerConnection.setRemoteDescription(message.answer);
-        } catch (error) {
-            console.error('处理answer失败:', error);
-        }
-    }
-
-    async handleIceCandidate(message) {
-        if (!this.peerConnection) return;
-
-        try {
-            await this.peerConnection.addIceCandidate(message.candidate);
-        } catch (error) {
-            console.error('处理ICE候选失败:', error);
-        }
-    }
-
-    setupEventListeners() {
-        this.myId.addEventListener('blur', () => {
-            if (this.myId.value === this.clientId) return;
-            this.ws.send(JSON.stringify({
-                type: 'rename',
-                from: this.clientId,
-                newClientId: this.myId.value,
-            }));
-        });
-
-        this.connectBtn.addEventListener('click', () => {
-            // 点击按钮时显示用户列表，由用户点击具体用户连接
-        });
-
-        this.fileInput.addEventListener('change', () => {
-            this.sendBtn.disabled = !this.fileInput.files.length;
-        });
-
-        this.sendBtn.addEventListener('click', () => {
-            this.sendFiles();
-        });
-
-        // 页面关闭时清理连接
-        window.addEventListener('beforeunload', () => {
-            this.disconnect();
-        });
-    }
-
+    /**
+     * 发送文件
+     * @returns {Promise}
+     */
     async sendFiles() {
-        const files = this.fileInput.files;
-        if (!files.length || !this.dataChannel || this.dataChannel.readyState !== 'open') {
-            alert('请先选择文件并确保连接正常');
-            return;
-        }
 
-        this.sendProgress.classList.remove('hidden');
+        // 发送所有文件元数据开始信号
+        this.peer.write(JSON.stringify({
+            type: 'file-meta-start',
+        }));
 
-        for (let file of files) {
-            await this.sendFile(file);
-        }
-
-        this.sendProgress.classList.add('hidden');
-        this.fileInput.value = '';
-        this.sendBtn.disabled = true;
-    }
-
-    async sendFile(file) {
-        return new Promise((resolve) => {
-            const fileId = this.generateId();
-            const chunkSize = 16 * 1024;
-            let offset = 0;
-            let isPaused = false;
-
-            // 设置缓冲区阈值
-            this.dataChannel.bufferedAmountLowThreshold = 1024 * 1024;
-
-            // 缓冲区恢复事件
-            this.dataChannel.onbufferedamountlow = () => {
-                if (isPaused) {
-                    isPaused = false;
-                    readNextChunk();
-                }
-            };
-
-            // 发送文件信息
-            this.sendWithFlowControl(JSON.stringify({
-                type: 'file-info',
-                fileId: fileId,
+        // 发送所有文件的元数据
+        for (let [fileId, file] of this.seFiles.entries()) {
+            // 发送文件元信息
+            this.peer.write(JSON.stringify({
+                type: 'file-meta',
+                fileId,
                 fileName: file.name,
                 fileSize: file.size,
-                fileType: file.type
+                fileType: file.type,
+                fileLastModified: file.lastModified,
             }));
+        }
 
-            const sendChunk = async (chunk, isLast) => {
-                // 等待缓冲区有足够空间
-                while (this.dataChannel.bufferedAmount > this.dataChannel.bufferedAmountLowThreshold) {
-                    isPaused = true;
-                    await new Promise(resolve => setTimeout(resolve, 10));
-                }
+        // 发送所有文件元数据结束信号
+        this.peer.write(JSON.stringify({
+            type: 'file-meta-end',
+        }));
 
-                this.dataChannel.send(JSON.stringify({
-                    type: 'file-chunk',
-                    fileId: fileId,
-                    chunk: Array.from(new Uint8Array(chunk)),
-                    isLast: isLast
-                }));
-
-                // 更新进度
-                const progress = Math.min(100, Math.round((offset + chunkSize) / file.size * 100));
-                this.sendProgressBar.style.width = progress + '%';
-                this.sendStatus.textContent = `发送中: ${file.name} (${progress}%)`;
-            };
-
-            const readNextChunk = () => {
-                if (offset >= file.size) {
-                    resolve();
-                    return;
-                }
-
-                const slice = file.slice(offset, Math.min(offset + chunkSize, file.size));
-                const reader = new FileReader();
-
-                reader.onload = async (e) => {
-                    const chunk = e.target.result;
-                    const isLast = offset + chunkSize >= file.size;
-
-                    await sendChunk(chunk, isLast);
-                    offset += chunkSize;
-
-                    if (!isLast && !isPaused) {
-                        readNextChunk();
-                    }
-                };
-
-                reader.readAsArrayBuffer(slice);
-            };
-
-            // 开始传输
-            readNextChunk();
-        });
-    }
-
-    // 封装的流量控制发送方法
-    sendWithFlowControl(data) {
-        return new Promise((resolve) => {
-            const checkBuffer = () => {
-                if (this.dataChannel.bufferedAmount <= this.dataChannel.bufferedAmountLowThreshold) {
-                    this.dataChannel.send(data);
-                    resolve();
-                } else {
-                    setTimeout(checkBuffer, 10);
-                }
-            };
-            checkBuffer();
-        });
-    }
-
-    handleReceivedFileInfo(message) {
-        const fileId = message.fileId;
-        this.receivedFiles.set(fileId, {
-            fileName: message.fileName,
-            fileSize: message.fileSize,
-            fileType: message.fileType,
-            chunks: [],
-            receivedSize: 0
-        });
-
-        this.addFileToReceiveList(fileId, message.fileName, message.fileSize, 0);
-    }
-
-    handleReceivedFileChunk(message) {
-        const fileInfo = this.receivedFiles.get(message.fileId);
-        if (!fileInfo) return;
-
-        fileInfo.chunks.push(new Uint8Array(message.chunk));
-        fileInfo.receivedSize += message.chunk.length;
-
-        const progress = Math.min(100, Math.round(fileInfo.receivedSize / fileInfo.fileSize * 100));
-        this.updateFileProgress(message.fileId, progress);
-
-        if (message.isLast) {
-            this.completeFileDownload(message.fileId);
+        for (let mapItem of this.seFiles.entries()) {
+            await this.sendSingleFile(mapItem);
         }
     }
 
-    addFileToReceiveList(fileId, fileName, fileSize, progress) {
-        const fileItem = document.createElement('div');
-        fileItem.className = 'file-item';
-        fileItem.id = `file-${fileId}`;
-        fileItem.innerHTML = `
-                    <div><strong>${fileName}</strong></div>
-                    <div class="file-info">
-                        <span>${this.formatFileSize(fileSize)}</span>
-                        <span>${progress}%</span>
-                    </div>
-                    <div class="progress">
-                        <div class="progress-bar" style="width: ${progress}%"></div>
-                    </div>
-                `;
-
-        this.receiveList.appendChild(fileItem);
-    }
-
-    updateFileProgress(fileId, progress) {
-        const fileElement = document.getElementById(`file-${fileId}`);
-        if (fileElement) {
-            const progressBar = fileElement.querySelector('.progress-bar');
-            const progressText = fileElement.querySelector('.file-info span:last-child');
-            progressBar.style.width = progress + '%';
-            progressText.textContent = progress + '%';
-        }
-    }
-
-    completeFileDownload(fileId) {
-        const fileInfo = this.receivedFiles.get(fileId);
-        if (!fileInfo) return;
-
-        // 合并所有chunks
-        const totalLength = fileInfo.chunks.reduce((total, chunk) => total + chunk.length, 0);
-        const result = new Uint8Array(totalLength);
+    /**
+     * 发送单个文件
+     * @param {[string, File]} mapItem 文件
+     * @returns {Promise}
+     */
+    async sendSingleFile(mapItem) {
         let offset = 0;
+        let chunkIndex = 0;
 
-        for (const chunk of fileInfo.chunks) {
-            result.set(chunk, offset);
-            offset += chunk.length;
+        const [fileId, file] = mapItem;
+
+        while (offset < file.size) {
+            const chunk = file.slice(offset, Math.min(offset + this.CHUNK_SIZE, file.size));
+            const arrayBuffer = await chunk.arrayBuffer();
+
+            // 发送文件分片，每个分片都携带fileId
+            this.peer.write(JSON.stringify({
+                type: 'file-chunk',
+                fileId: fileId,
+                chunkIndex,
+                chunk: Array.from(new Uint8Array(arrayBuffer)),
+            }))
+
+            offset += this.CHUNK_SIZE;
+            chunkIndex++;
+
+            // 更新发送进度条
+            this.$(fileId).querySelector('.percent').innerText = `${(offset / file.size * 100).toFixed(2)}%`;
         }
+
+        // 发送文件结束信号
+        this.peer.write(JSON.stringify({
+            type: 'file-end',
+            fileId,
+            chunkIndex,
+        }));
+
+        this.$(fileId).querySelector('.percent').innerText = '100%';
+
+    }
+
+    /**
+     * 接受所有文件元数据开始
+     * @param {Object} message 
+     */
+    receiveSingleFileMetaStart(message) {
+
+        this.reFiles = new Map();
+    }
+
+    /**
+     * 接收单个文件元信息
+     * @param {Object} message
+     */
+    receiveSingleFileMeta(message) {
+        let { fileId, fileName, fileSize, fileType, fileLastModified } = message;
+        console.log('文件元信息fileInfo', message);
+        if (!this.reFiles.has(fileId)) this.reFiles.set(fileId, {
+            fileId,
+            fileName,
+            fileSize,
+            fileType,
+            fileLastModified,
+            chunks: new Map(),
+        });
+    }
+
+    /**
+     * 接受所有文件元数据结束
+     * @param {Object} message 
+     */
+    receiveSingleFileMetaEnd(message) {
+
+        this.reFiles = this.reFiles;
+    }
+
+    /**
+     * 接收单个文件分片
+     * @param {Object} message 
+     */
+    receiveSingleFileChunk(message) {
+        const { fileId, chunkIndex, chunk } = message;
+        let fileInfo = this.reFiles.get(fileId);
+        if (!fileInfo) return;
+
+        fileInfo.chunks.set(chunkIndex, chunk);
+        // 更新发送进度条
+        let offset = this.CHUNK_SIZE * fileInfo.chunks.size - 1;
+        this.$(fileId).querySelector('.percent').innerText = `${(offset / fileInfo.fileSize * 100).toFixed(2)}%`;
+    }
+
+    /**
+     * 接收单个文件结束信号
+     * @param {Object} message 
+     */
+    receiveSingleFileChunkEnd(message) {
+        const { fileId, chunkIndex } = message;
+        let fileInfo = this.reFiles.get(fileId);
+        console.log('结束信号fileInfo', fileInfo);
+        const result = new Uint8Array(fileInfo.fileSize);
+
+        // 校验文件完整性，并拼接文件
+        for (let currentChunkIndex = 0; currentChunkIndex <= chunkIndex - 1; currentChunkIndex++) {
+            let chunk = fileInfo.chunks.get(currentChunkIndex);
+            if (!chunk) {
+                console.warn(`文件不完整：第${currentChunkIndex}/${chunkIndex}文件块丢失`)
+                return;
+            }
+            let pice = new Uint8Array(chunk);
+            let offset = currentChunkIndex * this.CHUNK_SIZE;
+            // console.log('pice', pice);
+            // console.log('offset', offset);
+            result.set(pice, offset);
+        }
+
+        this.$(fileId).querySelector('.percent').innerText = '100%';
 
         // 创建下载链接
-        const blob = new Blob([result], { type: fileInfo.fileType });
-        const url = URL.createObjectURL(blob);
+        this.$(fileId).addEventListener('click', (ev) => {
+            const blob = new Blob([result], { type: fileInfo.type });
+            const url = URL.createObjectURL(blob);
 
-        const fileElement = document.getElementById(`file-${fileId}`);
-        if (fileElement) {
-            const downloadBtn = document.createElement('button');
-            downloadBtn.className = 'btn btn-primary';
-            downloadBtn.textContent = '下载';
-            downloadBtn.onclick = () => {
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = fileInfo.fileName;
-                a.click();
-                URL.revokeObjectURL(url);
-            };
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileInfo.fileName;
+            a.click();
+            URL.revokeObjectURL(url);
+        })
+    }
 
-            fileElement.appendChild(downloadBtn);
+    $(id) {
+        return document.getElementById(id);
+    }
+
+    /**
+     * 计算文件id
+     * @param {File} file 
+     * @returns 
+     */
+    calcFileId(file) {
+        return `${file.name}${file.size}${file.type}${file.lastModified}`;
+    }
+
+
+    byteMap = new Map([
+        ['B', 1024 ** 0],
+        ['KB', 1024 ** 1],
+        ['MB', 1024 ** 2],
+        ['GB', 1024 ** 3],
+        ['TB', 1024 ** 4],
+    ])
+
+    /**
+     * 格式化字节
+     * @param {number} bytes 字节数，例如1024
+     * @returns {string} 字节数格式化后的字符串，例如1.00KB
+     */
+    formatBytes(bytes) {
+        if (bytes < this.byteMap.get('KB')) {
+            return (bytes / this.byteMap.get('B')).toFixed(2) + 'B';
+        } else if (bytes < this.byteMap.get('MB')) {
+            return (bytes / this.byteMap.get('KB')).toFixed(2) + 'KB';
+        } else if (bytes < this.byteMap.get('GB')) {
+            return (bytes / this.byteMap.get('MB')).toFixed(2) + 'MB';
+        } else if (bytes < this.byteMap.get('TB')) {
+            return (bytes / this.byteMap.get('GB')).toFixed(2) + 'GB';
+        } else {
+            return (bytes / this.byteMap.get('TB')).toFixed(2) + 'TB';
         }
-
-        this.updateFileProgress(fileId, 100);
     }
 
-    formatFileSize(bytes) {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    get clientId() {
+        return this._id;
     }
 
-    updateConnectionInfo(userId) {
-        this.connectionInfo.classList.remove('hidden');
-        this.connectedUserSpan.textContent = userId;
-        this.connectBtn.textContent = '断开连接';
-        this.connectBtn.onclick = () => this.disconnect();
+    set clientId(id) {
+        this._id = id;
+        this.$id.value = id;
     }
 
-    disconnect() {
-        if (this.peerConnection) {
-            this.peerConnection.close();
-            this.peerConnection = null;
+    get targetId() {
+        return this._targetId;
+    }
+
+    set targetId(id) {
+        this._targetId = id;
+    }
+
+    get status() {
+        return this._status;
+    }
+
+    set status(status) {
+        this._status = status;
+        this.$status.className = 'status';
+        this.$status.className += ' ' + status;
+        this.$status.innerText = this.statusChineseMap.get(status);
+        if (status === 'connected') {
+            this.$transferArea.classList.add('active');
+        } else {
+            this.$transferArea.classList.remove('active');
+
         }
-
-        this.dataChannel = null;
-        this.connectedUser = null;
-
-        this.connectionInfo.classList.add('hidden');
-        this.sendSection.classList.add('hidden');
-        this.waitingConnection.classList.remove('hidden');
-
-        this.connectBtn.textContent = '选择用户连接';
-        this.connectBtn.onclick = null;
-        this.connectBtn.addEventListener('click', () => {
-            // 重新绑定点击事件
-        });
-
-        this.updateStatus('connected', '✅ 已连接到服务器');
     }
 
-    updateStatus(type, message) {
-        this.statusElement.textContent = message;
-        this.statusElement.className = `status ${type}`;
+    get userList() {
+        return this._userList;
+    }
+
+    set userList(users) {
+        this._userList = users;
+
+        this.$userList.innerHTML = '';
+        const $ul = document.createElement('ul');
+        for (let user of users) {
+            const $li = document.createElement('li');
+            const $status = document.createElement('span');
+            const $id = document.createElement('span');
+            $status.className = 'status';
+            $status.className += ' ' + user.status;
+            $status.innerText = this.statusChineseMap.get(user.status);
+            $id.className = 'id';
+            $id.innerText = user.id;
+            $li.appendChild($id);
+            $li.appendChild($status);
+            $ul.appendChild($li);
+
+            $li.addEventListener('click', (ev) => {
+                this.targetId = user.id;
+                this.initPeer(true);
+            })
+        }
+        this.$userList.appendChild($ul);
+    }
+
+    get seFiles() {
+        return this._seFiles;
+    }
+
+    set seFiles(map) {
+        this._seFiles = map;
+        this.$sendList.innerHTML = '';
+        const $ul = document.createElement('ul');
+        for (let [fileId, file] of map.entries()) {
+            const $li = document.createElement('li');
+            $li.id = fileId;
+
+            const $filename = document.createElement('span');
+            $filename.className = 'filename';
+            $filename.innerText = `${file.name} ${this.formatBytes(file.size)}`;
+            $li.appendChild($filename);
+
+            const $percent = document.createElement('span');
+            $percent.className = 'percent';
+            $percent.innerText = '等待发送';
+            $li.appendChild($percent);
+
+            $ul.appendChild($li);
+        }
+        this.$sendList.appendChild($ul);
+    }
+
+    get reFiles() {
+        return this._reFiles;
+    }
+
+    set reFiles(map) {
+        this._reFiles = map;
+        this.$receiveList.innerHTML = '';
+        const $ul = document.createElement('ul');
+        for (let [fileId, fileInfo] of map.entries()) {
+            const $li = document.createElement('li');
+            $li.id = fileId;
+
+            const $filename = document.createElement('span');
+            $filename.className = 'filename';
+            $filename.innerText = `${fileInfo.fileName} ${this.formatBytes(fileInfo.fileSize)}`;
+            $li.appendChild($filename);
+
+            const $percent = document.createElement('span');
+            $percent.className = 'percent';
+            $percent.innerText = '等待接受';
+            $li.appendChild($percent);
+
+            $ul.appendChild($li);
+        }
+        this.$receiveList.appendChild($ul);
     }
 }
 

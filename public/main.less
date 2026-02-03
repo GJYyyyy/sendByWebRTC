@@ -1,0 +1,512 @@
+// 定义变量
+@primary-color: #3498db;
+@secondary-color: #2ecc71;
+@background-color: #f8f9fa;
+@text-color: #333;
+@border-color: #ddd;
+@error-color: #e74c3c;
+@success-color: #27ae60;
+
+@mobile-breakpoint: 768px;
+@tablet-breakpoint: 1024px;
+
+// 混合器
+.box-shadow(@x: 0, @y: 2px, @blur: 4px, @diffusion: 4px, @color: rgba(0, 0, 0, 0.1)) {
+    box-shadow: @x @y @blur @diffusion @color;
+}
+
+.border-radius(@radius: 4px) {
+    border-radius: @radius;
+}
+
+.transition(@property: all, @duration: 0.3s, @timing: ease) {
+    transition: @property @duration @timing;
+}
+
+// 基础样式
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: @background-color;
+    color: @text-color;
+    line-height: 1.6;
+    padding: 20px;
+    min-height: 100vh;
+
+    @media (max-width: @mobile-breakpoint) {
+        padding: 10px;
+    }
+}
+
+#main {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+
+    @media (max-width: @tablet-breakpoint) {
+        gap: 15px;
+    }
+
+    .title {
+        text-align: center;
+    }
+}
+
+span+span {
+    margin-left: 5px;
+}
+
+// 信息区域样式 - 使用Flex布局
+#infoArea {
+    background: white;
+    padding: 20px;
+    .border-radius(8px);
+    .box-shadow();
+    display: flex;
+    flex-direction: column;
+
+    .my-info {
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid @border-color;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+
+        #id {
+            padding: 8px 12px;
+            border: 1px solid @border-color;
+            .border-radius(4px);
+            .transition();
+
+            &:focus {
+                outline: none;
+                border-color: @primary-color;
+                .box-shadow(0, 0, 0, 2px, fade(@primary-color, 20%));
+            }
+        }
+
+        #status {
+            font-size: 0.9em;
+            color: #666;
+
+            &.connected {
+                color: @success-color;
+            }
+
+            &.disconnected {
+                color: @error-color;
+            }
+        }
+    }
+
+    .titl {
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: #2c3e50;
+    }
+
+    #userList {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        max-height: 300px;
+        overflow-y: auto;
+
+        .user-item {
+            padding: 8px 12px;
+            background: lighten(@background-color, 2%);
+            .border-radius(4px);
+            .transition();
+
+            &:hover {
+                background: lighten(@primary-color, 45%);
+            }
+
+            &.active {
+                background: lighten(@primary-color, 40%);
+                border-left: 3px solid @primary-color;
+            }
+        }
+    }
+}
+
+// 文件传输区域样式 - 默认隐藏，active时显示
+#transferArea {
+    display: none;
+    flex-direction: column;
+    gap: 20px;
+
+    &.active {
+        display: flex;
+    }
+
+    @media (max-width: @mobile-breakpoint) {
+        gap: 15px;
+    }
+
+    .send,
+    .receive {
+        background: white;
+        padding: 20px;
+        .border-radius(8px);
+        .box-shadow();
+        display: flex;
+        flex-direction: column;
+    }
+
+    .title {
+        font-size: 1.2em;
+        font-weight: 600;
+        margin-bottom: 15px;
+        color: #2c3e50;
+        padding-bottom: 10px;
+        border-bottom: 2px solid lighten(@primary-color, 30%);
+    }
+}
+
+// 发送区域特定样式
+.send {
+    .file-selector {
+        margin-bottom: 15px;
+
+        .file-input {
+            width: 100%;
+            padding: 10px;
+            border: 2px dashed @border-color;
+            .border-radius(4px);
+            .transition();
+
+            &:hover {
+                border-color: @primary-color;
+            }
+        }
+    }
+
+    #sendList {
+        margin-bottom: 15px;
+
+        ul {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            list-style: none;
+
+            li {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 12px;
+                background: lighten(@background-color, 2%);
+                .border-radius(4px);
+                .transition();
+
+                &:hover {
+                    background: lighten(@primary-color, 45%);
+                }
+
+                .filename {
+                    flex: 1;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    margin-right: 10px;
+                    font-weight: 500;
+                }
+
+                .percent {
+                    color: #666;
+                    font-size: 0.9em;
+                    min-width: 80px;
+                    text-align: right;
+
+                    &.waiting {
+                        color: #f39c12;
+                    }
+
+                    &.sending {
+                        color: @primary-color;
+                    }
+
+                    &.completed {
+                        color: @success-color;
+                    }
+
+                    &.error {
+                        color: @error-color;
+                    }
+                }
+            }
+        }
+    }
+
+    .actions {
+        #sendBtn {
+            width: 100%;
+            background: @secondary-color;
+            color: white;
+            border: none;
+            padding: 12px;
+            .border-radius(4px);
+            font-size: 1.1em;
+            cursor: pointer;
+            .transition();
+
+            &:hover:not(:disabled) {
+                background: darken(@secondary-color, 10%);
+            }
+
+            &:disabled {
+                background: #bdc3c7;
+                cursor: not-allowed;
+            }
+        }
+    }
+}
+
+// 接收区域特定样式
+.receive {
+    #receiveList {
+        ul {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            list-style: none;
+
+            li {
+                display: flex;
+                flex-direction: column;
+                padding: 12px;
+                background: lighten(@background-color, 2%);
+                .border-radius(4px);
+                border: 1px solid @border-color;
+                .transition();
+
+                &:hover {
+                    border-color: @primary-color;
+                }
+
+                .file-info {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 8px;
+
+                    .filename {
+                        font-weight: 500;
+                        flex: 1;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        margin-right: 10px;
+                    }
+
+                    .file-size {
+                        color: #666;
+                        font-size: 0.9em;
+                    }
+                }
+
+                .progress-container {
+                    width: 100%;
+                    margin: 8px 0;
+
+                    .progress {
+                        width: 100%;
+                        height: 4px;
+                        background: @border-color;
+                        .border-radius(2px);
+                        overflow: hidden;
+
+                        .progress-bar {
+                            height: 100%;
+                            background: @primary-color;
+                            .transition(width, 0.3s);
+                        }
+                    }
+                }
+
+                .status {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+
+                    .percent {
+                        color: #666;
+                        font-size: 0.9em;
+
+                        &.waiting {
+                            color: #f39c12;
+                        }
+
+                        &.receiving {
+                            color: @primary-color;
+                        }
+
+                        &.completed {
+                            color: @success-color;
+                        }
+
+                        &.error {
+                            color: @error-color;
+                        }
+                    }
+
+                    .action-buttons {
+                        display: flex;
+                        gap: 8px;
+
+                        button {
+                            padding: 6px 12px;
+                            border: none;
+                            .border-radius(4px);
+                            cursor: pointer;
+                            .transition();
+                            font-size: 0.9em;
+
+                            &.accept {
+                                background: @success-color;
+                                color: white;
+
+                                &:hover {
+                                    background: darken(@success-color, 10%);
+                                }
+                            }
+
+                            &.reject {
+                                background: @error-color;
+                                color: white;
+
+                                &:hover {
+                                    background: darken(@error-color, 10%);
+                                }
+                            }
+
+                            &.cancel {
+                                background: #bdc3c7;
+                                color: @text-color;
+
+                                &:hover {
+                                    background: darken(#bdc3c7, 10%);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 移动端优化
+@media (max-width: @mobile-breakpoint) {
+    #main {
+        gap: 15px;
+    }
+
+    #infoArea,
+    #transferArea .send,
+    #transferArea .receive {
+        padding: 15px;
+    }
+
+    #transferArea {
+        &.active {
+            display: flex;
+        }
+    }
+
+    // 移动端列表项优化
+    #sendList,
+    #receiveList {
+        ul li {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 8px;
+
+            .filename,
+            .percent,
+            .file-size {
+                text-align: left !important;
+            }
+
+            .action-buttons {
+                justify-content: space-between;
+
+                button {
+                    flex: 1;
+                }
+            }
+        }
+    }
+}
+
+// 平板端优化
+@media (min-width: @mobile-breakpoint + 1) and (max-width: @tablet-breakpoint) {
+    #transferArea {
+        &.active {
+            display: flex;
+            flex-direction: row;
+
+            .send,
+            .receive {
+                flex: 1;
+            }
+        }
+    }
+}
+
+// 加载动画
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.loading {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid @primary-color;
+    .border-radius(50%);
+    animation: spin 1s linear infinite;
+    margin-right: 8px;
+}
+
+// 隐藏类（用于其他可能需要隐藏的元素）
+.hidden {
+    display: none !important;
+}
+
+.visible {
+    display: block;
+}
+
+// 渐入动画
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fade-in {
+    animation: fadeIn 0.3s ease-out;
+}

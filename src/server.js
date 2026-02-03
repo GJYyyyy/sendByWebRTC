@@ -72,7 +72,6 @@ const wss = new WebSocket.Server({ port: WS_PORT });
 
 wss.on('connection', (ws) => {
     let clientId = null;
-
     console.log('新的客户端连接');
 
     ws.on('message', (data) => {
@@ -80,92 +79,46 @@ wss.on('connection', (ws) => {
             const message = JSON.parse(data.toString());
             console.log('收到消息:', message.type, '来自:', message.from);
 
-            switch (message.type) {
-                case 'join':
-                    // 新用户加入
-                    clientId = message.from;
-                    clients.set(clientId, { ws, id: clientId });
+            if (message.type === 'register') {
+                // 新用户加入
+                let { from, status } = message;
+                clientId = from;
+                clients.set(from, { ws, id: from, status: status });
+                broadcastUserList();
+            } else if (message.type === 'update-status') {
+                // 更新用户状态
+                let { from, status } = message;
+                let client = clients.get(from);
+                client.status = status;
+                clients.set(from, client);
+                broadcastUserList();
+            } else if (message.type === 'rename') {
+                // 用户重命名
+                let { from, newFrom } = message;
+                let client = clients.get(from);
+                if (clients.has(newFrom)) {
+                    // 用户名已存在
+                    client.ws.send(JSON.stringify({
+                        type: 'rename-error',
+                        message: '用户名已存在',
+                    }));
+                } else {
+                    // 更新用户名
+                    clients.delete(from);
+                    client.id = newFrom;
+                    clients.set(newFrom, client);
+                    client.ws.send(JSON.stringify({
+                        type: 'rename-success',
+                        newFrom,
+                    }));
 
-                    // 通知所有客户端更新用户列表
                     broadcastUserList();
-                    break;
-
-                case 'rename':
-                    // 用户重命名
-                    let newClientId = message.newClientId;
-                    if (clients.has(newClientId)) {
-                        // 用户名已存在
-                        ws.send(JSON.stringify({
-                            type: 'rename-error',
-                            message: '用户名已存在',
-                            clientId,
-                        }));
-                    } else {
-                        // 更新用户名
-                        let obj = clients.get(clientId);
-                        clients.delete(clientId);
-                        obj.id = newClientId;
-                        clients.set(newClientId, obj);
-                        clientId = newClientId;
-                        ws.send(JSON.stringify({
-                            type: 'rename-success',
-                            newClientId,
-                        }));
-
-                        broadcastUserList();
-                    }
-                    break;
-
-                case 'offer':
-                    // 转发offer给目标客户端
-                    forwardMessage(message.target, {
-                        type: 'offer',
-                        from: message.from,
-                        offer: message.offer
-                    });
-                    break;
-
-                case 'answer':
-                    // 转发answer给目标客户端
-                    forwardMessage(message.target, {
-                        type: 'answer',
-                        from: message.from,
-                        answer: message.answer
-                    });
-                    break;
-
-                case 'ice-candidate':
-                    // 转发ICE候选给目标客户端
-                    forwardMessage(message.target, {
-                        type: 'ice-candidate',
-                        from: message.from,
-                        candidate: message.candidate
-                    });
-                    break;
-
-                case 'file-info':
-                    // 转发文件信息
-                    forwardMessage(message.target, {
-                        type: 'file-info',
-                        from: message.from,
-                        fileId: message.fileId,
-                        fileName: message.fileName,
-                        fileSize: message.fileSize,
-                        fileType: message.fileType
-                    });
-                    break;
-
-                case 'file-chunk':
-                    // 转发文件块
-                    forwardMessage(message.target, {
-                        type: 'file-chunk',
-                        from: message.from,
-                        fileId: message.fileId,
-                        chunk: message.chunk,
-                        isLast: message.isLast
-                    });
-                    break;
+                }
+            } else if (message.type === 'peer-handshake') {
+                // 转发peer-handshake给目标客户端
+                forwardMessage(message.target, message);
             }
+
         } catch (error) {
             console.error('消息处理错误:', error);
         }
@@ -196,7 +149,8 @@ wss.on('connection', (ws) => {
         const userList = Array.from(clients.values())
             .filter(client => client.ws.readyState === WebSocket.OPEN)
             .map(client => ({
-                id: client.id,
+                ...client,
+                ws: undefined,
             }));
 
         clients.forEach(client => {
@@ -204,7 +158,7 @@ wss.on('connection', (ws) => {
                 // 发送除自己外的用户列表
                 const otherUsers = userList.filter(user => user.id !== client.id);
                 client.ws.send(JSON.stringify({
-                    type: 'user-list',
+                    type: 'update-user-list',
                     users: otherUsers
                 }));
             }
